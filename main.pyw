@@ -194,7 +194,6 @@ def create_tags_list_for_unicon(cwd, params):
     path = pathlib.Path(excel_path)
     path.unlink(missing_ok=True)
 
-    print(excel_path)
     wb = xlsxwriter.Workbook(excel_path)
 
     groups = []
