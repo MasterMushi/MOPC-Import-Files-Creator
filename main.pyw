@@ -3,52 +3,68 @@ import copy
 import csv
 import ctypes
 import os
+import pathlib
 import sys
+import xlsxwriter
+
+addr_space = '\\\\Address Space\\OPC_SERVER\\Virtual_Box'
 
 
 def get_settings_from_ini_file(cwd, name='settings.ini'):
     # Configuration ini-file reading
     ini_path = os.path.join(cwd, name)
 
-    with open(ini_path) as f:
-        cfg = configparser.ConfigParser()
-        cfg.read_file(f)
-        param_vex_path = cfg['settings']['param_vex_path']
+    try:
+        with open(ini_path) as f:
+            cfg = configparser.ConfigParser()
+            cfg.read_file(f)
+            param_vex_path = cfg['settings']['param_vex_path']
 
-    return param_vex_path
+        return param_vex_path
+
+    except FileNotFoundError:
+        ctypes.windll.user32.MessageBoxW(0, 'Cannot find ini-file {name}!',
+                                            'MOPC Import Files Creator', 1)
+        return False
 
 
 def get_dict_from_param_file(path):
-    with open(path, 'r') as csv_file:
-        for i in range(2):
-            # Start reading from the 2nd line
-            next(csv_file)
+    try:
+        with open(path, 'r') as csv_file:
+            for i in range(2):
+                # Start reading from the 2nd line
+                next(csv_file)
 
-        params_dict = csv.DictReader(f=csv_file,
-                                     delimiter=';',
-                                     quoting=csv.QUOTE_ALL)
+            params_dict = csv.DictReader(f=csv_file,
+                                         delimiter=';',
+                                         quoting=csv.QUOTE_ALL)
 
-        short_param_dict = []
-        for row in params_dict:
-            if '_DI_' in row['Group']:
-                ctyp = 'DI'
-                spec = row['Spec'][2:]
-            if '_DO_' in row['Group']:
-                ctyp = 'DO'
-                spec = row['Spec'][2:]
-            if 'UVL_' in row['Group']:
-                ctyp = 'UVL'
-                spec = row['Spec'][2:]
-            if 'EvalPar_' in row['Group']:
-                ctyp = 'EvalPar'
-                spec = str(int(row['Spec'][2:]) - 400000)
-            short_param_dict.append({'Varname': row['\'Varname'],
-                                     'Conn': row['Conn'],
-                                     'Group': row['Group'],
-                                     'Spec': spec,
-                                     'CTyp': ctyp})
+            short_param_dict = []
+            for row in params_dict:
+                if '_DI_' in row['Group']:
+                    ctyp = 'DI'
+                    spec = row['Spec'][2:]
+                if '_DO_' in row['Group']:
+                    ctyp = 'DO'
+                    spec = row['Spec'][2:]
+                if 'UVL_' in row['Group']:
+                    ctyp = 'UVL'
+                    spec = row['Spec'][2:]
+                if 'EvalPar_' in row['Group']:
+                    ctyp = 'EvalPar'
+                    spec = str(int(row['Spec'][2:]) - 400000)
+                short_param_dict.append({'Varname': row['\'Varname'],
+                                         'Conn': row['Conn'],
+                                         'Group': row['Group'],
+                                         'Spec': spec,
+                                         'CTyp': ctyp})
 
-    return short_param_dict
+        return short_param_dict
+
+    except FileNotFoundError:
+        ctypes.windll.user32.MessageBoxW(0, 'Cannot find file {csv_file}!',
+                                            'MOPC Import Files Creator', 1)
+        return False
 
 
 def create_mopc_folders_file(cwd, params):
@@ -60,7 +76,7 @@ def create_mopc_folders_file(cwd, params):
 
     folders = []
     for group in groups:
-        folders.append({'Item Location': r'\\Address Space\OPC_SERVER\Virtual_Box',
+        folders.append({'Item Location': addr_space,
                         'Name': group,
                         'Simulate': 'No',
                         'Use Simple Template': 'No',
@@ -78,6 +94,7 @@ def create_mopc_folders_file(cwd, params):
         writer.writeheader()
         for folder in folders:
             writer.writerow(folder)
+    return True
 
 
 def create_mopc_data_item_file(cwd, params):
@@ -129,7 +146,7 @@ def create_mopc_data_item_file(cwd, params):
 
     data_items = []
     for row in params:
-        template_data_item['Item Location'] = '\\\\Address Space\\OPC_SERVER\\Virtual_Box\\' + row['Group']
+        template_data_item['Item Location'] = addr_space + '\\' + row['Group']
         template_data_item['Name'] = row['Varname']
 
         if row['CTyp'] == 'DI' or row['CTyp'] == 'UVL':
@@ -164,6 +181,38 @@ def create_mopc_data_item_file(cwd, params):
         writer.writeheader()
         for data_item in data_items:
             writer.writerow(data_item)
+    return True
+
+
+def create_tags_list_for_unicon(cwd, params):
+    path = os.path.join(cwd, 'tags')
+    excel_path = os.path.join(path, 'tags.xlsx')
+
+    path = pathlib.Path(path)
+    path.mkdir(parents=True, exist_ok=True)
+
+    path = pathlib.Path(excel_path)
+    path.unlink(missing_ok=True)
+
+    print(excel_path)
+    wb = xlsxwriter.Workbook(excel_path)
+
+    groups = []
+    for param in params:
+        if param['Group'] not in groups:
+            groups.append(param['Group'])
+
+    for group in groups:
+        ws = wb.add_worksheet(group)
+        row = 0
+        for param in params:
+            if param['Group'] == group:
+                item = 'OPC_SERVER.Virtual_Box.' + group + '.' + param['Varname'].replace('\\', '.')
+                ws.write(row, 0, item)
+                row += 1
+    wb.close()
+
+    return True
 
 
 if __name__ == '__main__':
@@ -176,5 +225,7 @@ if __name__ == '__main__':
     create_mopc_folders_file(cwd, params_dict)
     create_mopc_data_item_file(cwd, params_dict)
 
-    ctypes.windll.user32.MessageBoxW(0, 'Import files created',
-                                     'MOPC Import Files Creator!', 1)
+    create_tags_list_for_unicon(cwd, params_dict)
+
+    ctypes.windll.user32.MessageBoxW(0, 'Import files successfuly created!',
+                                     'MOPC Import Files Creator', 1)
