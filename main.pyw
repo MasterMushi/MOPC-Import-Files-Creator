@@ -40,7 +40,13 @@ def get_dict_from_param_file(path):
                                          quoting=csv.QUOTE_ALL)
 
             short_param_dict = []
+
             for row in params_dict:
+
+                varname_dump = len(row['Group']) + 1
+                row['\'Varname'] = row['\'Varname'][varname_dump:]
+                row['Group'] = row['Group'].rsplit('_', 1)[0]
+
                 if '_DI_' in row['Group']:
                     ctyp = 'DI'
                     spec = row['Spec'][2:]
